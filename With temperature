@@ -1,1 +1,88 @@
+#include <DHT.h>  // Include the DHT sensor library
+#include <WiFi.h> // Include the WiFi library
+#include <PubSubClient.h> // Include the MQTT library
 
+// Define your Wi-Fi credentials
+const char* ssid = "your_wifi_ssid";
+const char* password = "your_wifi_password";
+
+// Define MQTT broker details
+const char* mqtt_server = "mqtt_broker_ip";
+const int mqtt_port = 1883;
+const char* mqtt_username = "mqtt_username";
+const char* mqtt_password = "mqtt_password";
+const char* mqtt_topic = "concrete_curing/temperature";
+
+// Define DHT sensor
+#define DHT_PIN 2   // Define the DHT sensor pin
+#define DHT_TYPE DHT22 // Define the type of DHT sensor (DHT22 or DHT11)
+
+// Define relay pin
+#define RELAY_PIN 4  // Define the pin connected to the relay
+
+// Temperature thresholds for controlling the sprinkler
+const float minTemperature = 25.0; // Minimum temperature in Celsius to start sprinkling
+const float maxTemperature = 35.0; // Maximum temperature in Celsius to stop sprinkling
+
+DHT dht(DHT_PIN, DHT_TYPE);
+WiFiClient espClient;
+PubSubClient client(espClient);
+
+void setup() {
+  Serial.begin(115200);
+  pinMode(RELAY_PIN, OUTPUT);
+  
+  // Connect to Wi-Fi
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(1000);
+    Serial.println("Connecting to WiFi...");
+  }
+  Serial.println("Connected to WiFi");
+  
+  // Connect to MQTT broker
+  client.setServer(mqtt_server, mqtt_port);
+  client.setCallback(callback);
+
+  // Initialize the DHT sensor
+  dht.begin();
+}
+
+void loop() {
+  if (!client.connected()) {
+    reconnect();
+  }
+  client.loop();
+
+  // Read temperature from the DHT sensor
+  float temperature = dht.readTemperature();
+
+  // Publish temperature to MQTT topic
+  client.publish(mqtt_topic, String(temperature).c_str());
+
+  // Control the sprinkler based on temperature
+  if (temperature >= maxTemperature) {
+    digitalWrite(RELAY_PIN, LOW); // Stop sprinkling
+  } else if (temperature <= minTemperature) {
+    digitalWrite(RELAY_PIN, HIGH); // Start sprinkling
+  }
+
+  delay(60000); // Delay for 1 minute (adjust as needed)
+}
+
+void callback(char* topic, byte* payload, unsigned int length) {
+  // Handle MQTT messages if needed
+}
+
+void reconnect() {
+  while (!client.connected()) {
+    Serial.println("Attempting MQTT connection...");
+    if (client.connect("arduino-client", mqtt_username, mqtt_password)) {
+      Serial.println("Connected to MQTT broker");
+      client.subscribe(mqtt_topic);
+    } else {
+      Serial.println("Failed to connect to MQTT broker. Retry in 5 seconds...");
+      delay(5000);
+    }
+  }
+}
